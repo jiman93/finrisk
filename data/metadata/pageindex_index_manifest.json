@@ -1,0 +1,93 @@
+{
+  "generated_at": "2026-02-08T18:47:52.707309+00:00",
+  "records": [
+    {
+      "ticker": "AAPL",
+      "pdf_path": "data/10k_pdfs/AAPL_10-K_2024-11-01_0000320193-24-000123.pdf",
+      "doc_id": "pi-cmle2q6rs006h0lpfpbv1nu9p",
+      "status": "error",
+      "retrieval_ready": false,
+      "submitted_at": "2026-02-08T18:25:46.500141+00:00",
+      "completed_at": null,
+      "last_checked_at": "2026-02-08T18:47:51.511473+00:00",
+      "error": "PageIndex poll failed (403): Invalid API key"
+    },
+    {
+      "ticker": "BA",
+      "pdf_path": "data/10k_pdfs/BA_10-K_2024-01-31_0000012927-24-000010.pdf",
+      "doc_id": "pi-cmle2r1ao006t0lpfiw8zvc87",
+      "status": "error",
+      "retrieval_ready": false,
+      "submitted_at": "2026-02-08T18:26:26.069003+00:00",
+      "completed_at": null,
+      "last_checked_at": "2026-02-08T18:47:52.705970+00:00",
+      "error": "PageIndex poll failed (403): Invalid API key"
+    },
+    {
+      "ticker": "JPM",
+      "pdf_path": "data/10k_pdfs/JPM_10-K_2025-02-14_0000019617-25-000270.pdf",
+      "doc_id": "pi-cmle2qhhq006l0lpff4wn9egc",
+      "status": "error",
+      "retrieval_ready": false,
+      "submitted_at": "2026-02-08T18:26:00.098345+00:00",
+      "completed_at": null,
+      "last_checked_at": "2026-02-08T18:47:51.908727+00:00",
+      "error": "PageIndex poll failed (403): Invalid API key"
+    },
+    {
+      "ticker": "MSFT",
+      "pdf_path": "data/10k_pdfs/MSFT_10-K_2024-07-30_0000950170-24-087843.pdf",
+      "doc_id": "pi-cmle2q1ke006f0lpf1mwrt30t",
+      "status": "error",
+      "retrieval_ready": false,
+      "submitted_at": "2026-02-08T18:25:38.275986+00:00",
+      "completed_at": null,
+      "last_checked_at": "2026-02-08T18:47:51.313063+00:00",
+      "error": "PageIndex poll failed (403): Invalid API key"
+    },
+    {
+      "ticker": "PFE",
+      "pdf_path": "data/10k_pdfs/PFE_10-K_2024-02-22_0000078003-24-000039.pdf",
+      "doc_id": "pi-cmle2qmn5006n0lpf81dp9qcc",
+      "status": "error",
+      "retrieval_ready": false,
+      "submitted_at": "2026-02-08T18:26:07.070113+00:00",
+      "completed_at": null,
+      "last_checked_at": "2026-02-08T18:47:52.108054+00:00",
+      "error": "PageIndex poll failed (403): Invalid API key"
+    },
+    {
+      "ticker": "TSLA",
+      "pdf_path": "data/10k_pdfs/TSLA_10-K_2024-01-29_0001628280-24-002390.pdf",
+      "doc_id": "pi-cmle2qbq9006j0lpf1l8e4yzk",
+      "status": "error",
+      "retrieval_ready": false,
+      "submitted_at": "2026-02-08T18:25:52.526848+00:00",
+      "completed_at": null,
+      "last_checked_at": "2026-02-08T18:47:51.709860+00:00",
+      "error": "PageIndex poll failed (403): Invalid API key"
+    },
+    {
+      "ticker": "WMT",
+      "pdf_path": "data/10k_pdfs/WMT_10-K_2024-03-15_0000104169-24-000056.pdf",
+      "doc_id": "pi-cmle2qruo006p0lpfjctw3peu",
+      "status": "error",
+      "retrieval_ready": false,
+      "submitted_at": "2026-02-08T18:26:13.850990+00:00",
+      "completed_at": null,
+      "last_checked_at": "2026-02-08T18:47:52.308940+00:00",
+      "error": "PageIndex poll failed (403): Invalid API key"
+    },
+    {
+      "ticker": "XOM",
+      "pdf_path": "data/10k_pdfs/XOM_10-K_2024-02-28_0000034088-24-000018.pdf",
+      "doc_id": "pi-cmle2qw7q006r0lpf074pnhaf",
+      "status": "error",
+      "retrieval_ready": false,
+      "submitted_at": "2026-02-08T18:26:19.422896+00:00",
+      "completed_at": null,
+      "last_checked_at": "2026-02-08T18:47:52.508307+00:00",
+      "error": "PageIndex poll failed (403): Invalid API key"
+    }
+  ]
+}

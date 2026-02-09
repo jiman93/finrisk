@@ -1,0 +1,115 @@
+{
+  "generated_at": "2026-02-07T14:58:05.312872+00:00",
+  "year": 2024,
+  "forms": [
+    "10-K"
+  ],
+  "records": [
+    {
+      "ticker": "MSFT",
+      "cik": "0000789019",
+      "accession_number": "0000950170-24-087843",
+      "filing_date": "2024-07-30",
+      "report_date": "2024-06-30",
+      "form": "10-K",
+      "primary_document": "msft-20240630.htm",
+      "html_url": "https://www.sec.gov/Archives/edgar/data/789019/000095017024087843/msft-20240630.htm",
+      "html_path": "data/10k_html/MSFT_10-K_2024-07-30_0000950170-24-087843.html",
+      "pdf_path": "data/10k_pdfs/MSFT_10-K_2024-07-30_0000950170-24-087843.pdf",
+      "pdf_renderer": "playwright"
+    },
+    {
+      "ticker": "AAPL",
+      "cik": "0000320193",
+      "accession_number": "0000320193-24-000123",
+      "filing_date": "2024-11-01",
+      "report_date": "2024-09-28",
+      "form": "10-K",
+      "primary_document": "aapl-20240928.htm",
+      "html_url": "https://www.sec.gov/Archives/edgar/data/320193/000032019324000123/aapl-20240928.htm",
+      "html_path": "data/10k_html/AAPL_10-K_2024-11-01_0000320193-24-000123.html",
+      "pdf_path": "data/10k_pdfs/AAPL_10-K_2024-11-01_0000320193-24-000123.pdf",
+      "pdf_renderer": "playwright"
+    },
+    {
+      "ticker": "TSLA",
+      "cik": "0001318605",
+      "accession_number": "0001628280-24-002390",
+      "filing_date": "2024-01-29",
+      "report_date": "2023-12-31",
+      "form": "10-K",
+      "primary_document": "tsla-20231231.htm",
+      "html_url": "https://www.sec.gov/Archives/edgar/data/1318605/000162828024002390/tsla-20231231.htm",
+      "html_path": "data/10k_html/TSLA_10-K_2024-01-29_0001628280-24-002390.html",
+      "pdf_path": "data/10k_pdfs/TSLA_10-K_2024-01-29_0001628280-24-002390.pdf",
+      "pdf_renderer": "playwright"
+    },
+    {
+      "ticker": "JPM",
+      "cik": "0000019617",
+      "accession_number": "0000019617-25-000270",
+      "filing_date": "2025-02-14",
+      "report_date": "2024-12-31",
+      "form": "10-K",
+      "primary_document": "jpm-20241231.htm",
+      "html_url": "https://www.sec.gov/Archives/edgar/data/19617/000001961725000270/jpm-20241231.htm",
+      "html_path": "data/10k_html/JPM_10-K_2025-02-14_0000019617-25-000270.html",
+      "pdf_path": "data/10k_pdfs/JPM_10-K_2025-02-14_0000019617-25-000270.pdf",
+      "pdf_renderer": "playwright"
+    },
+    {
+      "ticker": "PFE",
+      "cik": "0000078003",
+      "accession_number": "0000078003-24-000039",
+      "filing_date": "2024-02-22",
+      "report_date": "2023-12-31",
+      "form": "10-K",
+      "primary_document": "pfe-20231231.htm",
+      "html_url": "https://www.sec.gov/Archives/edgar/data/78003/000007800324000039/pfe-20231231.htm",
+      "html_path": "data/10k_html/PFE_10-K_2024-02-22_0000078003-24-000039.html",
+      "pdf_path": "data/10k_pdfs/PFE_10-K_2024-02-22_0000078003-24-000039.pdf",
+      "pdf_renderer": "playwright"
+    },
+    {
+      "ticker": "WMT",
+      "cik": "0000104169",
+      "accession_number": "0000104169-24-000056",
+      "filing_date": "2024-03-15",
+      "report_date": "2024-01-31",
+      "form": "10-K",
+      "primary_document": "wmt-20240131.htm",
+      "html_url": "https://www.sec.gov/Archives/edgar/data/104169/000010416924000056/wmt-20240131.htm",
+      "html_path": "data/10k_html/WMT_10-K_2024-03-15_0000104169-24-000056.html",
+      "pdf_path": "data/10k_pdfs/WMT_10-K_2024-03-15_0000104169-24-000056.pdf",
+      "pdf_renderer": "playwright"
+    },
+    {
+      "ticker": "XOM",
+      "cik": "0000034088",
+      "accession_number": "0000034088-24-000018",
+      "filing_date": "2024-02-28",
+      "report_date": "2023-12-31",
+      "form": "10-K",
+      "primary_document": "xom-20231231.htm",
+      "html_url": "https://www.sec.gov/Archives/edgar/data/34088/000003408824000018/xom-20231231.htm",
+      "html_path": "data/10k_html/XOM_10-K_2024-02-28_0000034088-24-000018.html",
+      "pdf_path": "data/10k_pdfs/XOM_10-K_2024-02-28_0000034088-24-000018.pdf",
+      "pdf_renderer": "playwright"
+    },
+    {
+      "ticker": "BA",
+      "cik": "0000012927",
+      "accession_number": "0000012927-24-000010",
+      "filing_date": "2024-01-31",
+      "report_date": "2023-12-31",
+      "form": "10-K",
+      "primary_document": "ba-20231231.htm",
+      "html_url": "https://www.sec.gov/Archives/edgar/data/12927/000001292724000010/ba-20231231.htm",
+      "html_path": "data/10k_html/BA_10-K_2024-01-31_0000012927-24-000010.html",
+      "pdf_path": "data/10k_pdfs/BA_10-K_2024-01-31_0000012927-24-000010.pdf",
+      "pdf_renderer": "playwright"
+    }
+  ],
+  "failures": [],
+  "warnings": []
+}

@@ -1,0 +1,11 @@
+.DS_Store
+.env
+__pycache__/
+*.pyc
+.venv/
+**/finrisk.db
+src/frontend/node_modules/
+src/frontend/dist/
+src/frontend/tsconfig.tsbuildinfo
+data/10k_html/
+data/10k_pdfs/
