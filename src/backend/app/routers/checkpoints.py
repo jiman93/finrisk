@@ -21,6 +21,7 @@ from app.services.checkpoint_resolver import (
     retry_checkpoint_instance,
     skip_checkpoint_instance,
     submit_checkpoint_instance,
+    timeout_checkpoint_instance,
     validate_submission,
 )
 
@@ -70,6 +71,7 @@ def _to_instance_response(
         submit_result=instance.submit_result,
         required=definition.required,
         timeout_seconds=definition.timeout_seconds,
+        max_retries=definition.max_retries,
         attempt_count=instance.attempt_count,
         last_error=instance.last_error,
         offered_at=instance.offered_at,
@@ -239,6 +241,27 @@ def retry_task_checkpoint(
 ):
     try:
         definition, instance = retry_checkpoint_instance(
+            db,
+            task_id=task_id,
+            instance_id=instance_id,
+        )
+    except ValueError as exc:
+        _raise_value_error(exc)
+    db.commit()
+    return _to_instance_response(definition, instance)
+
+
+@router.post(
+    "/api/tasks/{task_id}/checkpoints/{instance_id}/timeout",
+    response_model=CheckpointInstanceResponse,
+)
+def timeout_task_checkpoint(
+    task_id: str,
+    instance_id: str,
+    db: Session = Depends(get_db),
+):
+    try:
+        definition, instance = timeout_checkpoint_instance(
             db,
             task_id=task_id,
             instance_id=instance_id,

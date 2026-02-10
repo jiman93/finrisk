@@ -797,6 +797,41 @@ input {
   font-size: 12px;
 }
 
+.pi-timeout-wrap {
+  margin-top: 10px;
+}
+
+.pi-timeout-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  color: var(--text-muted);
+  font-size: 12px;
+  margin-bottom: 6px;
+}
+
+.pi-timeout-warning {
+  color: #ffb5be;
+}
+
+.pi-timeout-track {
+  height: 8px;
+  border-radius: 999px;
+  background: #0d131f;
+  border: 1px solid var(--border-soft);
+  overflow: hidden;
+}
+
+.pi-timeout-fill {
+  height: 100%;
+  background: linear-gradient(180deg, #438eee 0%, #2f78d9 100%);
+  transition: width 220ms ease;
+}
+
+.pi-timeout-fill.warning {
+  background: linear-gradient(180deg, #e76474 0%, #c53b4f 100%);
+}
+
 .pi-citation-source-chip {
   margin-top: 10px;
   width: fit-content;

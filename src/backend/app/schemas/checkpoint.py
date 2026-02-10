@@ -54,6 +54,7 @@ class CheckpointInstanceResponse(BaseModel):
     submit_result: dict | None
     required: bool
     timeout_seconds: int | None
+    max_retries: int
     attempt_count: int
     last_error: str | None
     offered_at: datetime | None

@@ -8,10 +8,12 @@ import {
   skipTaskCheckpoint,
   startSession,
   submitTaskCheckpoint,
+  timeoutTaskCheckpoint,
   syntheticGenerate,
   syntheticRetrieve,
   type ValidationErrorDetail,
 } from "../api/client";
+import CheckpointErrorBoundary from "./controls/CheckpointErrorBoundary";
 import DynamicControlRenderer from "./controls/DynamicControlRenderer";
 import type {
   CheckpointInstanceResponse,
@@ -832,6 +834,61 @@ export default function ChatInterface({ onPromptLogged }: ChatInterfaceProps) {
     }
   }
 
+  async function handleCheckpointTimeout(itemId: string) {
+    const checkpointItem = items.find(
+      (item): item is Extract<ChatItem, { kind: "checkpoint" }> =>
+        item.kind === "checkpoint" && item.id === itemId
+    );
+    if (!checkpointItem) {
+      return;
+    }
+
+    if (
+      checkpointItem.instance.state === "submitted" ||
+      checkpointItem.instance.state === "collapsed" ||
+      checkpointItem.instance.state === "skipped"
+    ) {
+      return;
+    }
+
+    markCheckpointSubmitting(itemId, true);
+
+    try {
+      const timedOut = await timeoutTaskCheckpoint(checkpointItem.taskId, checkpointItem.instance.id);
+      updateCheckpointInstance(itemId, timedOut);
+
+      if (timedOut.required) {
+        setItems((prev) => [
+          ...prev,
+          {
+            id: makeId("status"),
+            kind: "status",
+            content: `${timedOut.label} timed out. Retry is required to continue.`,
+          },
+        ]);
+        return;
+      }
+
+      const skipped = await skipTaskCheckpoint(checkpointItem.taskId, checkpointItem.instance.id);
+      updateCheckpointInstance(itemId, skipped);
+      setItems((prev) => [
+        ...prev,
+        {
+          id: makeId("status"),
+          kind: "status",
+          content: `${timedOut.label} timed out and was auto-skipped.`,
+        },
+      ]);
+
+      if (checkpointItem.pipelinePosition === "post_generation") {
+        completeFlowMessage();
+      }
+    } catch (caught) {
+      const message = caught instanceof Error ? caught.message : "Timeout handling failed";
+      setCheckpointError(itemId, message, {});
+    }
+  }
+
   return (
     <section className="pi-chat-shell">
       <div className={`pi-workspace ${panelOpen ? "" : "pane-collapsed"}`}>
@@ -984,17 +1041,30 @@ export default function ChatInterface({ onPromptLogged }: ChatInterfaceProps) {
 
                   if (item.kind === "checkpoint") {
                     return (
-                      <DynamicControlRenderer
+                      <CheckpointErrorBoundary
                         key={item.id}
-                        instance={item.instance}
-                        initialData={item.initialData}
-                        fieldErrors={item.fieldErrors}
-                        submitError={item.submitError}
-                        submitting={item.submitting}
-                        onSubmit={(data) => handleCheckpointSubmit(item.id, data)}
-                        onSkip={() => handleCheckpointSkip(item.id)}
-                        onRetry={() => handleCheckpointRetry(item.id)}
-                      />
+                        instanceId={item.instance.id}
+                        label={item.instance.label}
+                        required={item.instance.required}
+                        onRetry={() => {
+                          void handleCheckpointRetry(item.id);
+                        }}
+                        onSkip={() => {
+                          void handleCheckpointSkip(item.id);
+                        }}
+                      >
+                        <DynamicControlRenderer
+                          instance={item.instance}
+                          initialData={item.initialData}
+                          fieldErrors={item.fieldErrors}
+                          submitError={item.submitError}
+                          submitting={item.submitting}
+                          onSubmit={(data) => handleCheckpointSubmit(item.id, data)}
+                          onSkip={() => handleCheckpointSkip(item.id)}
+                          onRetry={() => handleCheckpointRetry(item.id)}
+                          onTimeout={() => handleCheckpointTimeout(item.id)}
+                        />
+                      </CheckpointErrorBoundary>
                     );
                   }
 

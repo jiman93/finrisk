@@ -115,6 +115,7 @@ export interface CheckpointInstanceResponse {
   submit_result: Record<string, unknown> | null;
   required: boolean;
   timeout_seconds: number | null;
+  max_retries: number;
   attempt_count: number;
   last_error: string | null;
   offered_at: string | null;

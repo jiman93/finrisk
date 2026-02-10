@@ -191,6 +191,23 @@ def retry_checkpoint_instance(
     return definition, instance
 
 
+def timeout_checkpoint_instance(
+    db: Session,
+    *,
+    task_id: str,
+    instance_id: str,
+) -> tuple[CheckpointDefinition, CheckpointInstance]:
+    definition, instance = get_checkpoint_instance(db, task_id=task_id, instance_id=instance_id)
+    if instance.state in {CheckpointState.submitted, CheckpointState.skipped, CheckpointState.collapsed}:
+        raise ValueError("Completed checkpoints cannot be timed out")
+
+    instance.attempt_count = instance.attempt_count + 1
+    instance.state = CheckpointState.timed_out
+    instance.last_error = "Checkpoint timed out"
+    instance.failed_at = datetime.utcnow()
+    return definition, instance
+
+
 def _is_empty_value(value: Any) -> bool:
     if value is None:
         return True
