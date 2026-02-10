@@ -103,6 +103,43 @@ export interface CheckpointDefinitionResponse {
   updated_at: string;
 }
 
+export interface CheckpointDefinitionCreateRequest {
+  control_type: string;
+  label: string;
+  description?: string;
+  field_schema: CheckpointFieldDefinition[];
+  pipeline_position: CheckpointPipelinePosition;
+  sort_order?: number;
+  applicable_modes?: string[];
+  required?: boolean;
+  timeout_seconds?: number | null;
+  max_retries?: number;
+  circuit_breaker_threshold?: number;
+  circuit_breaker_window_minutes?: number;
+  enabled?: boolean;
+}
+
+export interface CheckpointDefinitionUpdateRequest {
+  label?: string;
+  description?: string;
+  field_schema?: CheckpointFieldDefinition[];
+  pipeline_position?: CheckpointPipelinePosition;
+  sort_order?: number;
+  applicable_modes?: string[];
+  required?: boolean;
+  timeout_seconds?: number | null;
+  max_retries?: number;
+  circuit_breaker_threshold?: number;
+  circuit_breaker_window_minutes?: number;
+  enabled?: boolean;
+}
+
+export interface CheckpointFieldTypeResponse {
+  type: string;
+  label: string;
+  description: string;
+}
+
 export interface CheckpointInstanceResponse {
   id: string;
   task_id: string;
