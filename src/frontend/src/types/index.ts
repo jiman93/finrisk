@@ -1,4 +1,14 @@
 export type Mode = "baseline" | "hitl_r" | "hitl_g" | "hitl_full";
+export type CheckpointPipelinePosition = "after_retrieval" | "after_generation" | "post_generation";
+export type CheckpointState =
+  | "pending"
+  | "offered"
+  | "active"
+  | "submitted"
+  | "collapsed"
+  | "skipped"
+  | "failed"
+  | "timed_out";
 
 export interface SessionState {
   session_id: string;
@@ -55,6 +65,71 @@ export interface SyntheticGenerateResponse {
   latency_ms: number;
   summary: string;
   citations: string[];
+}
+
+export interface CheckpointFieldOption {
+  value: string;
+  label: string;
+}
+
+export interface CheckpointFieldDefinition {
+  key: string;
+  type: string;
+  label: string;
+  required: boolean;
+  placeholder?: string | null;
+  options?: CheckpointFieldOption[] | null;
+  min?: number | null;
+  max?: number | null;
+  default?: string | number | boolean | string[] | null;
+}
+
+export interface CheckpointDefinitionResponse {
+  id: string;
+  control_type: string;
+  label: string;
+  description: string;
+  field_schema: CheckpointFieldDefinition[];
+  pipeline_position: CheckpointPipelinePosition;
+  sort_order: number;
+  applicable_modes: string[];
+  required: boolean;
+  timeout_seconds: number | null;
+  max_retries: number;
+  circuit_breaker_threshold: number;
+  circuit_breaker_window_minutes: number;
+  enabled: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CheckpointInstanceResponse {
+  id: string;
+  task_id: string;
+  definition_id: string;
+  control_type: string;
+  label: string;
+  state: CheckpointState;
+  field_schema: CheckpointFieldDefinition[];
+  payload: Record<string, unknown> | null;
+  submit_result: Record<string, unknown> | null;
+  required: boolean;
+  timeout_seconds: number | null;
+  attempt_count: number;
+  last_error: string | null;
+  offered_at: string | null;
+  submitted_at: string | null;
+}
+
+export interface ResolvedCheckpointsResponse {
+  task_id: string;
+  pipeline_position: CheckpointPipelinePosition;
+  checkpoints: CheckpointInstanceResponse[];
+}
+
+export interface CheckpointValidationIssue {
+  key: string;
+  message: string;
 }
 
 export interface GenerateResponse {
@@ -128,4 +203,10 @@ export type ChatMessage =
       type: "editable_summary";
       taskId: string;
       summary: string;
+    }
+  | {
+      id: string;
+      type: "checkpoint";
+      taskId: string;
+      checkpoint: CheckpointInstanceResponse;
     };
