@@ -3,10 +3,12 @@ from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import inspect, text
 
 import app.models  # noqa: F401
-from app.db.database import Base, engine
+from app.db.database import Base, SessionLocal, engine
+from app.routers.checkpoints import router as checkpoints_router
 from app.routers.sessions import router as sessions_router
 from app.routers.synthetic import router as synthetic_router
 from app.routers.tasks import router as tasks_router
+from app.services.checkpoint_seeder import ensure_seed_checkpoint_definitions
 
 app = FastAPI(
     title="FinRisk HITL API",
@@ -30,6 +32,7 @@ app.add_middleware(
 def startup():
     Base.metadata.create_all(bind=engine)
     _apply_sqlite_compat_migrations()
+    _seed_checkpoint_definitions()
 
 
 @app.get("/health")
@@ -40,6 +43,7 @@ def health():
 app.include_router(sessions_router)
 app.include_router(tasks_router)
 app.include_router(synthetic_router)
+app.include_router(checkpoints_router)
 
 
 def _apply_sqlite_compat_migrations() -> None:
@@ -67,3 +71,16 @@ def _apply_sqlite_compat_migrations() -> None:
                 connection.execute(
                     text(f"ALTER TABLE {table_name} ADD COLUMN {column_name} {column_type}")
                 )
+
+
+def _seed_checkpoint_definitions() -> None:
+    db = SessionLocal()
+    try:
+        created = ensure_seed_checkpoint_definitions(db)
+        if created:
+            db.commit()
+    except Exception:
+        db.rollback()
+        raise
+    finally:
+        db.close()

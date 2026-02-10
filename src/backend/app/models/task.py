@@ -39,3 +39,8 @@ class Task(Base):
     edit_completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=False))
 
     session = relationship("Session", back_populates="tasks")
+    checkpoint_instances = relationship(
+        "CheckpointInstance",
+        back_populates="task",
+        cascade="all, delete-orphan",
+    )
