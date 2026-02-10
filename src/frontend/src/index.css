@@ -191,6 +191,138 @@ input {
   display: grid;
 }
 
+.pi-admin-shell {
+  min-height: 0;
+  padding: 16px;
+  display: grid;
+  grid-template-rows: auto auto auto 1fr;
+  gap: 12px;
+}
+
+.pi-admin-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.pi-admin-header h2 {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 600;
+}
+
+.pi-admin-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.pi-admin-banner {
+  border-radius: 10px;
+  padding: 10px 12px;
+  font-size: 13px;
+}
+
+.pi-admin-banner.success {
+  border: 1px solid #2f5c49;
+  background: rgba(30, 73, 56, 0.35);
+  color: #bfead5;
+}
+
+.pi-admin-banner.error {
+  border: 1px solid #6e3b44;
+  background: rgba(92, 26, 38, 0.35);
+  color: #ffb5be;
+}
+
+.pi-admin-grid {
+  min-height: 0;
+  display: grid;
+  grid-template-columns: minmax(330px, 38%) minmax(500px, 1fr);
+  gap: 12px;
+}
+
+.pi-admin-list,
+.pi-admin-editor {
+  min-height: 0;
+  border: 1px solid var(--border-soft);
+  border-radius: 12px;
+  background: #111722;
+  padding: 12px;
+}
+
+.pi-admin-list {
+  overflow-y: auto;
+}
+
+.pi-admin-editor {
+  overflow-y: auto;
+}
+
+.pi-admin-section-title {
+  margin: 6px 0 10px;
+  color: var(--text-primary);
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.pi-admin-list-item {
+  border: 1px solid var(--border-soft);
+  border-radius: 10px;
+  background: #0f141f;
+  padding: 10px;
+  display: grid;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.pi-admin-item-title {
+  color: var(--text-primary);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.pi-admin-item-meta {
+  margin-top: 2px;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.pi-admin-item-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.pi-admin-form {
+  display: grid;
+}
+
+.pi-admin-inline-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.pi-admin-json {
+  font-family: "JetBrains Mono", "SFMono-Regular", "Menlo", monospace;
+  font-size: 12px;
+}
+
+.pi-admin-field-types {
+  display: grid;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.pi-admin-field-type {
+  border: 1px solid var(--border-soft);
+  border-radius: 8px;
+  background: #0f141f;
+  padding: 8px 10px;
+}
+
 .pi-chat-shell {
   min-height: 0;
   display: block;
@@ -900,5 +1032,17 @@ input {
   .pi-doc-row {
     grid-template-columns: 1fr;
     width: min(620px, 92vw);
+  }
+
+  .pi-admin-shell {
+    padding: 10px;
+  }
+
+  .pi-admin-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .pi-admin-inline-grid {
+    grid-template-columns: 1fr;
   }
 }

@@ -1,4 +1,8 @@
 import type {
+  CheckpointDefinitionCreateRequest,
+  CheckpointDefinitionResponse,
+  CheckpointDefinitionUpdateRequest,
+  CheckpointFieldTypeResponse,
   CheckpointInstanceResponse,
   CheckpointPipelinePosition,
   CheckpointValidationIssue,
@@ -206,5 +210,69 @@ export function timeoutTaskCheckpoint(
   return request<CheckpointInstanceResponse>(`/api/tasks/${taskId}/checkpoints/${instanceId}/timeout`, {
     method: "POST",
     body: JSON.stringify({}),
+  });
+}
+
+export function listCheckpointDefinitions(
+  enabledOnly: boolean = false
+): Promise<CheckpointDefinitionResponse[]> {
+  const query = enabledOnly ? "?enabled_only=true" : "";
+  return request<CheckpointDefinitionResponse[]>(`/api/checkpoints/definitions${query}`, {
+    method: "GET",
+  });
+}
+
+export function getCheckpointDefinition(
+  definitionId: string
+): Promise<CheckpointDefinitionResponse> {
+  return request<CheckpointDefinitionResponse>(`/api/checkpoints/definitions/${definitionId}`, {
+    method: "GET",
+  });
+}
+
+export function createCheckpointDefinition(
+  payload: CheckpointDefinitionCreateRequest
+): Promise<CheckpointDefinitionResponse> {
+  return request<CheckpointDefinitionResponse>("/api/checkpoints/definitions", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export function updateCheckpointDefinition(
+  definitionId: string,
+  payload: CheckpointDefinitionUpdateRequest
+): Promise<CheckpointDefinitionResponse> {
+  return request<CheckpointDefinitionResponse>(`/api/checkpoints/definitions/${definitionId}`, {
+    method: "PUT",
+    body: JSON.stringify(payload),
+  });
+}
+
+export function toggleCheckpointDefinition(
+  definitionId: string,
+  enabled: boolean
+): Promise<CheckpointDefinitionResponse> {
+  return request<CheckpointDefinitionResponse>(
+    `/api/checkpoints/definitions/${definitionId}/toggle`,
+    {
+      method: "POST",
+      body: JSON.stringify({ enabled }),
+    }
+  );
+}
+
+export function deleteCheckpointDefinition(
+  definitionId: string
+): Promise<CheckpointDefinitionResponse> {
+  return request<CheckpointDefinitionResponse>(`/api/checkpoints/definitions/${definitionId}`, {
+    method: "DELETE",
+    body: JSON.stringify({}),
+  });
+}
+
+export function listCheckpointFieldTypes(): Promise<CheckpointFieldTypeResponse[]> {
+  return request<CheckpointFieldTypeResponse[]>("/api/checkpoints/field-types", {
+    method: "GET",
   });
 }

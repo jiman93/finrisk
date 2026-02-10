@@ -74,3 +74,44 @@ class CheckpointSubmitRequest(BaseModel):
 class CheckpointValidationIssue(BaseModel):
     key: str
     message: str
+
+
+class CheckpointDefinitionCreateRequest(BaseModel):
+    control_type: str
+    label: str
+    description: str = ""
+    field_schema: list[FieldDefinition] = Field(default_factory=list)
+    pipeline_position: CheckpointPipelinePosition
+    sort_order: int = 0
+    applicable_modes: list[str] = Field(default_factory=lambda: ["*"])
+    required: bool = False
+    timeout_seconds: int | None = None
+    max_retries: int = 2
+    circuit_breaker_threshold: int = 5
+    circuit_breaker_window_minutes: int = 60
+    enabled: bool = True
+
+
+class CheckpointDefinitionUpdateRequest(BaseModel):
+    label: str | None = None
+    description: str | None = None
+    field_schema: list[FieldDefinition] | None = None
+    pipeline_position: CheckpointPipelinePosition | None = None
+    sort_order: int | None = None
+    applicable_modes: list[str] | None = None
+    required: bool | None = None
+    timeout_seconds: int | None = None
+    max_retries: int | None = None
+    circuit_breaker_threshold: int | None = None
+    circuit_breaker_window_minutes: int | None = None
+    enabled: bool | None = None
+
+
+class CheckpointToggleRequest(BaseModel):
+    enabled: bool
+
+
+class CheckpointFieldTypeResponse(BaseModel):
+    type: str
+    label: str
+    description: str

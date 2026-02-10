@@ -1,9 +1,13 @@
 import { useState } from "react";
 
+import CheckpointAdminPanel from "./components/admin/CheckpointAdminPanel";
 import ChatInterface from "./components/ChatInterface";
+
+type AppView = "chat" | "admin";
 
 export default function App() {
   const [chatKey, setChatKey] = useState(0);
+  const [view, setView] = useState<AppView>("chat");
   const [chatHistory, setChatHistory] = useState<string[]>([
     "Financial risk related to supply...",
     "How does the Fed assess...",
@@ -29,8 +33,9 @@ export default function App() {
         <div className="pi-logo">Y</div>
         <nav className="pi-nav">
           <button
-            className="pi-nav-item active"
+            className={`pi-nav-item ${view === "chat" ? "active" : ""}`}
             onClick={() => {
+              setView("chat");
               setChatKey((prev) => prev + 1);
               setActiveChat("New Chat");
             }}
@@ -39,25 +44,39 @@ export default function App() {
           </button>
           <button className="pi-nav-item">Documents</button>
           <button className="pi-nav-item">Library</button>
+          <button
+            className={`pi-nav-item ${view === "admin" ? "active" : ""}`}
+            onClick={() => setView("admin")}
+          >
+            Admin Controls
+          </button>
         </nav>
 
-        <div className="pi-sidebar-section">
-          <div className="pi-sidebar-label">Chats</div>
-          {chatHistory.map((item) => (
-            <button
-              key={item}
-              className={`pi-chat-item ${activeChat === item ? "active" : ""}`}
-              onClick={() => setActiveChat(item)}
-            >
-              {item}
-            </button>
-          ))}
-        </div>
+        {view === "chat" ? (
+          <div className="pi-sidebar-section">
+            <div className="pi-sidebar-label">Chats</div>
+            {chatHistory.map((item) => (
+              <button
+                key={item}
+                className={`pi-chat-item ${activeChat === item ? "active" : ""}`}
+                onClick={() => setActiveChat(item)}
+              >
+                {item}
+              </button>
+            ))}
+          </div>
+        ) : null}
 
         <div className="pi-sidebar-footer">
-          <button className="pi-icon-btn" title="Settings">⚙</button>
-          <button className="pi-icon-btn" title="Inbox">✉</button>
-          <button className="pi-icon-btn" title="Help">⌘</button>
+          <button className="pi-icon-btn" title="Settings">
+            ⚙
+          </button>
+          <button className="pi-icon-btn" title="Inbox">
+            ✉
+          </button>
+          <button className="pi-icon-btn" title="Help">
+            ⌘
+          </button>
         </div>
       </aside>
 
@@ -65,7 +84,7 @@ export default function App() {
         <header className="pi-topbar">
           <div className="pi-topbar-left">
             <button className="pi-collapse-btn">▮</button>
-            <span className="pi-chat-title">{activeChat}</span>
+            <span className="pi-chat-title">{view === "chat" ? activeChat : "Checkpoint Admin"}</span>
           </div>
           <div className="pi-topbar-right">
             <button className="pi-pill-btn">Contact Us</button>
@@ -75,10 +94,11 @@ export default function App() {
         </header>
 
         <div className="pi-canvas">
-          <ChatInterface
-            key={chatKey}
-            onPromptLogged={handlePromptLogged}
-          />
+          {view === "chat" ? (
+            <ChatInterface key={chatKey} onPromptLogged={handlePromptLogged} />
+          ) : (
+            <CheckpointAdminPanel />
+          )}
         </div>
       </section>
     </main>

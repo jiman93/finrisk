@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -8,8 +9,12 @@ from app.models.checkpoint_instance import CheckpointInstance
 from app.models.enums import CheckpointPipelinePosition
 from app.schemas.checkpoint import (
     CheckpointDefinitionResponse,
+    CheckpointDefinitionCreateRequest,
     CheckpointInstanceResponse,
+    CheckpointDefinitionUpdateRequest,
+    CheckpointFieldTypeResponse,
     CheckpointSubmitRequest,
+    CheckpointToggleRequest,
     CheckpointValidationIssue,
     FieldDefinition,
     ResolvedCheckpointsResponse,
@@ -26,6 +31,38 @@ from app.services.checkpoint_resolver import (
 )
 
 router = APIRouter(tags=["checkpoints"])
+
+SUPPORTED_FIELD_TYPES: tuple[CheckpointFieldTypeResponse, ...] = (
+    CheckpointFieldTypeResponse(type="text", label="Text", description="Single-line text input."),
+    CheckpointFieldTypeResponse(
+        type="textarea", label="Textarea", description="Multi-line text input."
+    ),
+    CheckpointFieldTypeResponse(
+        type="select", label="Select", description="Single select dropdown using options."
+    ),
+    CheckpointFieldTypeResponse(
+        type="multi_select",
+        label="Multi Select",
+        description="Multiple selection using options.",
+    ),
+    CheckpointFieldTypeResponse(
+        type="checkbox", label="Checkbox", description="Single boolean choice."
+    ),
+    CheckpointFieldTypeResponse(
+        type="radio", label="Radio", description="Single choice from radio options."
+    ),
+    CheckpointFieldTypeResponse(
+        type="number", label="Number", description="Numeric input with optional min/max."
+    ),
+    CheckpointFieldTypeResponse(
+        type="range", label="Range", description="Numeric range input with optional min/max."
+    ),
+    CheckpointFieldTypeResponse(
+        type="chips",
+        label="Chips",
+        description="Chip/tag multi-select from options or comma-separated input.",
+    ),
+)
 
 
 def _parse_field_schema(raw_schema: list[dict] | None) -> list[FieldDefinition]:
@@ -83,11 +120,64 @@ def _to_validation_issue(issue: ValidationIssue) -> CheckpointValidationIssue:
     return CheckpointValidationIssue(key=issue.key, message=issue.message)
 
 
+def _normalize_modes(modes: list[str] | None) -> list[str]:
+    if not modes:
+        return ["*"]
+    normalized = [mode.strip() for mode in modes if mode.strip()]
+    return normalized or ["*"]
+
+
+def _field_schema_to_json(field_schema: list[FieldDefinition]) -> list[dict]:
+    return [field.model_dump(exclude_none=True) for field in field_schema]
+
+
+def _update_definition_from_payload(
+    definition: CheckpointDefinition,
+    payload: CheckpointDefinitionUpdateRequest,
+) -> None:
+    data = payload.model_dump(exclude_unset=True)
+    if "field_schema" in data and data["field_schema"] is not None:
+        definition.field_schema = _field_schema_to_json(payload.field_schema or [])
+    if "applicable_modes" in data and data["applicable_modes"] is not None:
+        definition.applicable_modes = _normalize_modes(payload.applicable_modes)
+    if "label" in data:
+        definition.label = payload.label or definition.label
+    if "description" in data and payload.description is not None:
+        definition.description = payload.description
+    if "pipeline_position" in data and payload.pipeline_position is not None:
+        definition.pipeline_position = payload.pipeline_position
+    if "sort_order" in data and payload.sort_order is not None:
+        definition.sort_order = payload.sort_order
+    if "required" in data and payload.required is not None:
+        definition.required = payload.required
+    if "timeout_seconds" in data:
+        definition.timeout_seconds = payload.timeout_seconds
+    if "max_retries" in data and payload.max_retries is not None:
+        definition.max_retries = payload.max_retries
+    if "circuit_breaker_threshold" in data and payload.circuit_breaker_threshold is not None:
+        definition.circuit_breaker_threshold = payload.circuit_breaker_threshold
+    if (
+        "circuit_breaker_window_minutes" in data
+        and payload.circuit_breaker_window_minutes is not None
+    ):
+        definition.circuit_breaker_window_minutes = payload.circuit_breaker_window_minutes
+    if "enabled" in data and payload.enabled is not None:
+        definition.enabled = payload.enabled
+
+
 def _raise_value_error(exc: ValueError) -> None:
     message = str(exc)
     if "not found" in message.lower():
         raise HTTPException(status_code=404, detail=message) from exc
     raise HTTPException(status_code=400, detail=message) from exc
+
+
+@router.get(
+    "/api/checkpoints/field-types",
+    response_model=list[CheckpointFieldTypeResponse],
+)
+def list_checkpoint_field_types():
+    return list(SUPPORTED_FIELD_TYPES)
 
 
 @router.get(
@@ -109,6 +199,121 @@ def list_checkpoint_definitions(
         )
     ).all()
     return [_to_definition_response(definition) for definition in definitions]
+
+
+@router.post(
+    "/api/checkpoints/definitions",
+    response_model=CheckpointDefinitionResponse,
+    status_code=201,
+)
+def create_checkpoint_definition(
+    payload: CheckpointDefinitionCreateRequest,
+    db: Session = Depends(get_db),
+):
+    existing = db.scalar(
+        select(CheckpointDefinition).where(
+            CheckpointDefinition.control_type == payload.control_type
+        )
+    )
+    if existing:
+        raise HTTPException(
+            status_code=409,
+            detail=f"Checkpoint control_type '{payload.control_type}' already exists",
+        )
+
+    definition = CheckpointDefinition(
+        control_type=payload.control_type,
+        label=payload.label,
+        description=payload.description,
+        field_schema=_field_schema_to_json(payload.field_schema),
+        pipeline_position=payload.pipeline_position,
+        sort_order=payload.sort_order,
+        applicable_modes=_normalize_modes(payload.applicable_modes),
+        required=payload.required,
+        timeout_seconds=payload.timeout_seconds,
+        max_retries=payload.max_retries,
+        circuit_breaker_threshold=payload.circuit_breaker_threshold,
+        circuit_breaker_window_minutes=payload.circuit_breaker_window_minutes,
+        enabled=payload.enabled,
+    )
+    db.add(definition)
+    try:
+        db.commit()
+    except IntegrityError as exc:
+        db.rollback()
+        raise HTTPException(status_code=409, detail="Duplicate checkpoint control_type") from exc
+    db.refresh(definition)
+    return _to_definition_response(definition)
+
+
+@router.get(
+    "/api/checkpoints/definitions/{definition_id}",
+    response_model=CheckpointDefinitionResponse,
+)
+def get_checkpoint_definition(
+    definition_id: str,
+    db: Session = Depends(get_db),
+):
+    definition = db.get(CheckpointDefinition, definition_id)
+    if not definition:
+        raise HTTPException(status_code=404, detail="Checkpoint definition not found")
+    return _to_definition_response(definition)
+
+
+@router.put(
+    "/api/checkpoints/definitions/{definition_id}",
+    response_model=CheckpointDefinitionResponse,
+)
+def update_checkpoint_definition(
+    definition_id: str,
+    payload: CheckpointDefinitionUpdateRequest,
+    db: Session = Depends(get_db),
+):
+    definition = db.get(CheckpointDefinition, definition_id)
+    if not definition:
+        raise HTTPException(status_code=404, detail="Checkpoint definition not found")
+
+    _update_definition_from_payload(definition, payload)
+    db.commit()
+    db.refresh(definition)
+    return _to_definition_response(definition)
+
+
+@router.post(
+    "/api/checkpoints/definitions/{definition_id}/toggle",
+    response_model=CheckpointDefinitionResponse,
+)
+def toggle_checkpoint_definition(
+    definition_id: str,
+    payload: CheckpointToggleRequest,
+    db: Session = Depends(get_db),
+):
+    definition = db.get(CheckpointDefinition, definition_id)
+    if not definition:
+        raise HTTPException(status_code=404, detail="Checkpoint definition not found")
+
+    definition.enabled = payload.enabled
+    db.commit()
+    db.refresh(definition)
+    return _to_definition_response(definition)
+
+
+@router.delete(
+    "/api/checkpoints/definitions/{definition_id}",
+    response_model=CheckpointDefinitionResponse,
+)
+def delete_checkpoint_definition(
+    definition_id: str,
+    db: Session = Depends(get_db),
+):
+    definition = db.get(CheckpointDefinition, definition_id)
+    if not definition:
+        raise HTTPException(status_code=404, detail="Checkpoint definition not found")
+
+    definition.enabled = False
+    db.commit()
+    db.refresh(definition)
+    return _to_definition_response(definition)
 
 
 @router.get(
