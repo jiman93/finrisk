@@ -235,6 +235,7 @@ export type ChatMessage =
       type: "selector";
       taskId: string;
       nodes: RetrievalNode[];
+      checkpointId?: string;
     }
   | {
       id: string;
@@ -246,5 +247,10 @@ export type ChatMessage =
       id: string;
       type: "checkpoint";
       taskId: string;
+      pipelinePosition?: CheckpointPipelinePosition;
       checkpoint: CheckpointInstanceResponse;
+      initialData?: Record<string, unknown>;
+      submitError?: string;
+      fieldErrors?: Record<string, string>;
+      submitting?: boolean;
     };
