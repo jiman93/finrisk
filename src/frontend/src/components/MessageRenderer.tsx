@@ -76,6 +76,16 @@ export default function MessageRenderer({
       </AssistantBlock>
     );
   }
+  if (message.type === "checkpoint") {
+    return (
+      <AssistantBlock>
+        <TextBubble
+          role="assistant"
+          content={`Checkpoint: ${message.checkpoint.label} (${message.checkpoint.state})`}
+        />
+      </AssistantBlock>
+    );
+  }
   return (
     <AssistantBlock>
       <SummaryMessage summary={message.summary} />

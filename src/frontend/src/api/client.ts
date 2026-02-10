@@ -1,9 +1,13 @@
 import type {
+  CheckpointInstanceResponse,
+  CheckpointPipelinePosition,
+  CheckpointValidationIssue,
   EditSummaryResponse,
   FlaggedSpan,
   GenerateResponse,
   NextPhaseResponse,
   QueryResponse,
+  ResolvedCheckpointsResponse,
   SelectNodesResponse,
   SessionState,
   SyntheticGenerateResponse,
@@ -12,20 +16,52 @@ import type {
 
 const BASE_URL = import.meta.env.VITE_API_URL ?? "http://localhost:8000";
 
+export class ApiError extends Error {
+  status: number;
+  detail: unknown;
+
+  constructor(message: string, status: number, detail: unknown) {
+    super(message);
+    this.name = "ApiError";
+    this.status = status;
+    this.detail = detail;
+  }
+}
+
+export interface ValidationErrorDetail {
+  message: string;
+  issues: CheckpointValidationIssue[];
+  attempt_count: number;
+  max_retries: number;
+  retry_available: boolean;
+}
+
 async function request<T>(path: string, init: RequestInit): Promise<T> {
   const response = await fetch(`${BASE_URL}${path}`, {
     headers: { "Content-Type": "application/json" },
     ...init,
   });
   if (!response.ok) {
-    let detail = "";
+    let detail: unknown = "";
     try {
-      const data = (await response.json()) as { detail?: string };
-      detail = data.detail ? ` - ${data.detail}` : "";
+      const data = (await response.json()) as { detail?: unknown };
+      detail = data.detail ?? "";
     } catch {
       detail = "";
     }
-    throw new Error(`Request failed: ${response.status}${detail}`);
+
+    const detailText =
+      typeof detail === "string"
+        ? detail
+        : detail && typeof detail === "object"
+          ? JSON.stringify(detail)
+          : "";
+
+    throw new ApiError(
+      `Request failed: ${response.status}${detailText ? ` - ${detailText}` : ""}`,
+      response.status,
+      detail
+    );
   }
   return response.json() as Promise<T>;
 }
@@ -110,5 +146,55 @@ export function syntheticGenerate(
   return request<SyntheticGenerateResponse>("/api/synthetic/generate", {
     method: "POST",
     body: JSON.stringify(payload),
+  });
+}
+
+export function resolveTaskCheckpoints(
+  taskId: string,
+  pipelinePosition: CheckpointPipelinePosition
+): Promise<ResolvedCheckpointsResponse> {
+  return request<ResolvedCheckpointsResponse>(
+    `/api/tasks/${taskId}/checkpoints?pipeline_position=${pipelinePosition}`,
+    { method: "GET" }
+  );
+}
+
+export function getTaskCheckpoint(
+  taskId: string,
+  instanceId: string
+): Promise<CheckpointInstanceResponse> {
+  return request<CheckpointInstanceResponse>(`/api/tasks/${taskId}/checkpoints/${instanceId}`, {
+    method: "GET",
+  });
+}
+
+export function submitTaskCheckpoint(
+  taskId: string,
+  instanceId: string,
+  data: Record<string, unknown>
+): Promise<CheckpointInstanceResponse> {
+  return request<CheckpointInstanceResponse>(`/api/tasks/${taskId}/checkpoints/${instanceId}/submit`, {
+    method: "POST",
+    body: JSON.stringify({ data }),
+  });
+}
+
+export function skipTaskCheckpoint(
+  taskId: string,
+  instanceId: string
+): Promise<CheckpointInstanceResponse> {
+  return request<CheckpointInstanceResponse>(`/api/tasks/${taskId}/checkpoints/${instanceId}/skip`, {
+    method: "POST",
+    body: JSON.stringify({}),
+  });
+}
+
+export function retryTaskCheckpoint(
+  taskId: string,
+  instanceId: string
+): Promise<CheckpointInstanceResponse> {
+  return request<CheckpointInstanceResponse>(`/api/tasks/${taskId}/checkpoints/${instanceId}/retry`, {
+    method: "POST",
+    body: JSON.stringify({}),
   });
 }

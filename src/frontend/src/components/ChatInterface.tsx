@@ -1,7 +1,23 @@
 import { FormEvent, useState } from "react";
 
-import { syntheticGenerate, syntheticRetrieve } from "../api/client";
-import type { SyntheticRetrieveResponse } from "../types";
+import {
+  ApiError,
+  nextPhase,
+  resolveTaskCheckpoints,
+  retryTaskCheckpoint,
+  skipTaskCheckpoint,
+  startSession,
+  submitTaskCheckpoint,
+  syntheticGenerate,
+  syntheticRetrieve,
+  type ValidationErrorDetail,
+} from "../api/client";
+import DynamicControlRenderer from "./controls/DynamicControlRenderer";
+import type {
+  CheckpointInstanceResponse,
+  CheckpointPipelinePosition,
+  SyntheticRetrieveResponse,
+} from "../types";
 
 interface ChatInterfaceProps {
   onPromptLogged: (prompt: string) => void;
@@ -23,13 +39,18 @@ interface CitationDetail {
 }
 
 interface QuestionnaireDraft {
-  confidence: string;
-  citationHelpfulness: string;
+  qAccuracy: string;
+  qNoErrors: string;
+  qTrust: string;
   notes: string;
 }
 
+interface TaskRunContext {
+  taskId: string;
+  ticker: string;
+}
+
 type StepStatus = "running" | "completed" | "failed";
-type PostGenerationStage = "input" | "decision" | "editing" | "questionnaire";
 
 type StatusActionType = "view_selected" | "view_edited" | "view_questionnaire";
 
@@ -46,12 +67,29 @@ type ChatItem =
       id: string;
       kind: "selector";
       query: string;
+      taskId: string;
+      ticker: string;
       retrievalId: string;
       docId: string;
       scenario: string;
       chunks: RetrievalChunk[];
       selectedChunkIds: string[];
+      checkpointId?: string;
       submitted: boolean;
+      submitting?: boolean;
+      submitError?: string;
+      fieldErrors?: Record<string, string>;
+    }
+  | {
+      id: string;
+      kind: "checkpoint";
+      taskId: string;
+      pipelinePosition: CheckpointPipelinePosition;
+      instance: CheckpointInstanceResponse;
+      initialData?: Record<string, unknown>;
+      submitting?: boolean;
+      submitError?: string;
+      fieldErrors?: Record<string, string>;
     }
   | { id: string; kind: "status"; content: string; action?: StatusAction }
   | {
@@ -69,6 +107,8 @@ type PanelContent =
   | { type: "selected"; chunks: RetrievalChunk[] }
   | { type: "edited"; summary: string }
   | { type: "questionnaire"; response: QuestionnaireDraft };
+
+const DEFAULT_PARTICIPANT_ID = "P13";
 
 function makeId(prefix: string): string {
   return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
@@ -155,17 +195,52 @@ function findCitationDetail(citation: string, chunks: RetrievalChunk[]): Citatio
   };
 }
 
+function parseValidationDetail(error: unknown): {
+  message: string;
+  fieldErrors: Record<string, string>;
+  attemptCount?: number;
+  maxRetries?: number;
+  retryAvailable?: boolean;
+} {
+  if (!(error instanceof ApiError)) {
+    return {
+      message: error instanceof Error ? error.message : "Submission failed",
+      fieldErrors: {},
+    };
+  }
+
+  const detail = error.detail;
+  if (!detail || typeof detail !== "object") {
+    return { message: error.message, fieldErrors: {} };
+  }
+
+  const payload = detail as Partial<ValidationErrorDetail> & {
+    issues?: Array<{ key?: string; message?: string }>;
+  };
+
+  const issues = Array.isArray(payload.issues) ? payload.issues : [];
+  const fieldErrors = issues.reduce<Record<string, string>>((acc, issue) => {
+    if (!issue?.key) {
+      return acc;
+    }
+    acc[issue.key] = issue.message ?? "Invalid value";
+    return acc;
+  }, {});
+
+  return {
+    message: payload.message ?? error.message,
+    fieldErrors,
+    attemptCount: payload.attempt_count,
+    maxRetries: payload.max_retries,
+    retryAvailable: payload.retry_available,
+  };
+}
+
 export default function ChatInterface({ onPromptLogged }: ChatInterfaceProps) {
   const [items, setItems] = useState<ChatItem[]>([]);
   const [draft, setDraft] = useState("");
   const [isBusy, setIsBusy] = useState(false);
-  const [postGenerationStage, setPostGenerationStage] = useState<PostGenerationStage>("input");
-  const [editableSummary, setEditableSummary] = useState("");
-  const [questionnaire, setQuestionnaire] = useState<QuestionnaireDraft>({
-    confidence: "",
-    citationHelpfulness: "",
-    notes: "",
-  });
+  const [canAskNextQuery, setCanAskNextQuery] = useState(true);
   const [cachedChunks, setCachedChunks] = useState<RetrievalChunk[]>([]);
   const [panelOpen, setPanelOpen] = useState(true);
   const [panelContent, setPanelContent] = useState<PanelContent>({ type: "none" });
@@ -201,164 +276,169 @@ export default function ChatInterface({ onPromptLogged }: ChatInterfaceProps) {
     }
   }
 
-  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    const query = draft.trim();
-    if (!query || isBusy) {
+  async function bootstrapTaskContext(): Promise<TaskRunContext> {
+    const session = await startSession(DEFAULT_PARTICIPANT_ID);
+    await nextPhase(session.session_id);
+    const phaseThree = await nextPhase(session.session_id);
+
+    return {
+      taskId: phaseThree.current_task_id,
+      ticker: phaseThree.current_ticker,
+    };
+  }
+
+  async function resolveCheckpointInstances(
+    taskId: string,
+    pipelinePosition: CheckpointPipelinePosition
+  ): Promise<CheckpointInstanceResponse[]> {
+    const resolved = await resolveTaskCheckpoints(taskId, pipelinePosition);
+    return resolved.checkpoints;
+  }
+
+  function appendCheckpointItems(
+    taskId: string,
+    pipelinePosition: CheckpointPipelinePosition,
+    checkpoints: CheckpointInstanceResponse[],
+    summarySeed: string
+  ) {
+    if (checkpoints.length === 0) {
       return;
     }
 
-    const structureStepId = makeId("step");
-    const retrievalStepId = makeId("step");
-
-    setDraft("");
-    setPostGenerationStage("input");
-    onPromptLogged(query);
-    setIsBusy(true);
-
     setItems((prev) => [
       ...prev,
-      { id: makeId("user"), kind: "user", content: query },
-      {
-        id: makeId("assistant"),
-        kind: "assistant",
-        content:
-          "I'll help with that. Let me first inspect the document structure and then fetch relevant passages.",
-      },
-      { id: structureStepId, kind: "step", label: "Get document structure", status: "running" },
+      ...checkpoints.map((checkpoint) => ({
+        id: makeId("checkpoint"),
+        kind: "checkpoint" as const,
+        taskId,
+        pipelinePosition,
+        instance: checkpoint,
+        initialData:
+          checkpoint.control_type === "summary_editor"
+            ? { edited_text: summarySeed }
+            : undefined,
+        submitting: false,
+        submitError: undefined,
+        fieldErrors: undefined,
+      })),
     ]);
-
-    try {
-      await sleep(320);
-      setItems((prev) =>
-        prev.map((item) =>
-          item.kind === "step" && item.id === structureStepId
-            ? { ...item, status: "completed", meta: "34 sections scanned" }
-            : item
-        )
-      );
-
-      setItems((prev) => [
-        ...prev,
-        {
-          id: makeId("assistant"),
-          kind: "assistant",
-          content: `Now I'll pull passages relevant to "${query}".`,
-        },
-        { id: retrievalStepId, kind: "step", label: "Get page content", status: "running" },
-      ]);
-
-      const retrieval = await syntheticRetrieve(query, "MSFT");
-      const chunks = flattenChunks(retrieval);
-      setCachedChunks(chunks);
-
-      setItems((prev) =>
-        prev.map((item) =>
-          item.kind === "step" && item.id === retrievalStepId
-            ? {
-                ...item,
-                status: "completed",
-                meta: `${chunks.length} chunks • ${retrieval.latency_ms} ms`,
-              }
-            : item
-        )
-      );
-
-      setItems((prev) => [
-        ...prev,
-        {
-          id: makeId("assistant"),
-          kind: "assistant",
-          content:
-            "I found candidate chunks. Choose what to include in the final summary before generation.",
-        },
-        {
-          id: makeId("selector"),
-          kind: "selector",
-          query,
-          retrievalId: retrieval.retrieval_id,
-          docId: retrieval.doc_id,
-          scenario: retrieval.scenario,
-          chunks,
-          selectedChunkIds: chunks.map((chunk) => chunk.chunkId),
-          submitted: false,
-        },
-      ]);
-    } catch (caught) {
-      const message = caught instanceof Error ? caught.message : "Retrieval failed";
-      setItems((prev) =>
-        prev.map((item) =>
-          item.kind === "step" && item.id === retrievalStepId
-            ? { ...item, status: "failed", meta: "Request failed" }
-            : item
-        )
-      );
-      setItems((prev) => [...prev, { id: makeId("error"), kind: "error", content: message }]);
-    } finally {
-      setIsBusy(false);
-    }
   }
 
-  function toggleChunk(selectorId: string, chunkId: string) {
+  function markCheckpointSubmitting(itemId: string, submitting: boolean) {
     setItems((prev) =>
       prev.map((item) => {
-        if (item.kind !== "selector" || item.id !== selectorId || item.submitted) {
+        if (item.kind !== "checkpoint" || item.id !== itemId) {
           return item;
         }
-        const selected = new Set(item.selectedChunkIds);
-        if (selected.has(chunkId)) {
-          selected.delete(chunkId);
-        } else {
-          selected.add(chunkId);
-        }
-        return { ...item, selectedChunkIds: Array.from(selected) };
+        return {
+          ...item,
+          submitting,
+          submitError: undefined,
+          fieldErrors: undefined,
+        };
       })
     );
   }
 
-  async function submitSelection(selectorId: string) {
-    const selector = items.find(
-      (item): item is Extract<ChatItem, { kind: "selector" }> =>
-        item.kind === "selector" && item.id === selectorId
-    );
-
-    if (!selector || selector.submitted || selector.selectedChunkIds.length === 0 || isBusy) {
-      return;
-    }
-
-    const selectedChunks = selector.chunks.filter((chunk) =>
-      selector.selectedChunkIds.includes(chunk.chunkId)
-    );
-    const selectedCount = selectedChunks.length;
-    const generateNodes = buildGenerateNodes(selector.chunks, selector.selectedChunkIds);
-    const generationStepId = makeId("step");
-
-    setLastSelectedChunks(selectedChunks);
-
+  function setCheckpointError(
+    itemId: string,
+    message: string,
+    fieldErrors: Record<string, string>,
+    attemptCount?: number
+  ) {
     setItems((prev) =>
-      prev.map((item) =>
-        item.kind === "selector" && item.id === selectorId ? { ...item, submitted: true } : item
-      )
+      prev.map((item) => {
+        if (item.kind !== "checkpoint" || item.id !== itemId) {
+          return item;
+        }
+        return {
+          ...item,
+          submitting: false,
+          submitError: message,
+          fieldErrors,
+          instance: {
+            ...item.instance,
+            state: "failed",
+            last_error: message,
+            attempt_count: attemptCount ?? item.instance.attempt_count,
+          },
+        };
+      })
     );
+  }
 
+  function updateCheckpointInstance(itemId: string, instance: CheckpointInstanceResponse) {
+    setItems((prev) =>
+      prev.map((item) => {
+        if (item.kind !== "checkpoint" || item.id !== itemId) {
+          return item;
+        }
+        return {
+          ...item,
+          instance,
+          submitting: false,
+          submitError: undefined,
+          fieldErrors: undefined,
+        };
+      })
+    );
+  }
+
+  function completeFlowMessage() {
     setItems((prev) => [
       ...prev,
       {
         id: makeId("status"),
         kind: "status",
-        content: `${selectedCount} chunk${selectedCount > 1 ? "s" : ""} selected.`,
-        action: { label: "View selected chunks", type: "view_selected" },
+        content: "HITL flow completed. You can start the next retrieval query.",
       },
+    ]);
+    setCanAskNextQuery(true);
+  }
+
+  async function resolvePostGenerationControls(taskId: string, summarySeed: string) {
+    const postGeneration = await resolveCheckpointInstances(taskId, "post_generation");
+    if (postGeneration.length === 0) {
+      completeFlowMessage();
+      return;
+    }
+
+    setItems((prev) => [
+      ...prev,
+      {
+        id: makeId("assistant"),
+        kind: "assistant",
+        content: "Before moving on, please complete the post-task checkpoint.",
+      },
+    ]);
+    appendCheckpointItems(taskId, "post_generation", postGeneration, summarySeed);
+  }
+
+  async function runGenerationFromSelection(params: {
+    selectorId: string;
+    taskId: string;
+    query: string;
+    ticker: string;
+    retrievalId: string;
+    docId: string;
+    chunks: RetrievalChunk[];
+    selectedChunkIds: string[];
+  }) {
+    const generationStepId = makeId("step");
+    const generateNodes = buildGenerateNodes(params.chunks, params.selectedChunkIds);
+
+    setItems((prev) => [
+      ...prev,
       { id: generationStepId, kind: "step", label: "Synthesize answer", status: "running" },
     ]);
 
     setIsBusy(true);
     try {
       const generation = await syntheticGenerate({
-        query: selector.query,
-        ticker: "MSFT",
-        retrieval_id: selector.retrievalId,
-        doc_id: selector.docId,
+        query: params.query,
+        ticker: params.ticker,
+        retrieval_id: params.retrievalId,
+        doc_id: params.docId,
         retrieved_nodes: generateNodes,
       });
 
@@ -385,8 +465,20 @@ export default function ChatInterface({ onPromptLogged }: ChatInterfaceProps) {
         },
       ]);
 
-      setEditableSummary(generation.summary);
-      setPostGenerationStage("decision");
+      const afterGeneration = await resolveCheckpointInstances(params.taskId, "after_generation");
+      if (afterGeneration.length > 0) {
+        setItems((prev) => [
+          ...prev,
+          {
+            id: makeId("assistant"),
+            kind: "assistant",
+            content: "Please review and complete the generation checkpoint.",
+          },
+        ]);
+        appendCheckpointItems(params.taskId, "after_generation", afterGeneration, generation.summary);
+      } else {
+        await resolvePostGenerationControls(params.taskId, generation.summary);
+      }
     } catch (caught) {
       const message = caught instanceof Error ? caught.message : "Generation failed";
       setItems((prev) =>
@@ -397,62 +489,347 @@ export default function ChatInterface({ onPromptLogged }: ChatInterfaceProps) {
         )
       );
       setItems((prev) => [...prev, { id: makeId("error"), kind: "error", content: message }]);
+      setCanAskNextQuery(true);
     } finally {
       setIsBusy(false);
     }
   }
 
-  function handleEditSummaryChoice() {
-    setPostGenerationStage("editing");
-  }
-
-  function handleSaveEditedSummary() {
-    const edited = editableSummary.trim();
-    if (!edited) {
-      return;
-    }
-
-    setLastEditedSummary(edited);
-    setItems((prev) => [
-      ...prev,
-      {
-        id: makeId("status"),
-        kind: "status",
-        content: "Edited summary submitted.",
-        action: { label: "View edited summary", type: "view_edited" },
-      },
-    ]);
-    setPostGenerationStage("decision");
-  }
-
-  function handleQuestionnaireChoice() {
-    setPostGenerationStage("questionnaire");
-  }
-
-  function handleSubmitQuestionnaire(event: FormEvent<HTMLFormElement>) {
+  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!questionnaire.confidence || !questionnaire.citationHelpfulness) {
+    const query = draft.trim();
+    if (!query || isBusy || !canAskNextQuery) {
       return;
     }
 
-    setLastQuestionnaire(questionnaire);
+    const structureStepId = makeId("step");
+    const retrievalStepId = makeId("step");
+
+    setDraft("");
+    setCanAskNextQuery(false);
+    onPromptLogged(query);
+    setIsBusy(true);
+
     setItems((prev) => [
       ...prev,
+      { id: makeId("user"), kind: "user", content: query },
       {
-        id: makeId("status"),
-        kind: "status",
-        content: `Questionnaire submitted: confidence ${questionnaire.confidence}/5, citation helpfulness ${questionnaire.citationHelpfulness}.`,
-        action: { label: "View questionnaire", type: "view_questionnaire" },
+        id: makeId("assistant"),
+        kind: "assistant",
+        content:
+          "I'll help with that. Let me first inspect the document structure and then fetch relevant passages.",
       },
-      {
-        id: makeId("status"),
-        kind: "status",
-        content: "HITL flow completed. You can start the next retrieval query.",
-      },
+      { id: structureStepId, kind: "step", label: "Get document structure", status: "running" },
     ]);
 
-    setQuestionnaire({ confidence: "", citationHelpfulness: "", notes: "" });
-    setPostGenerationStage("input");
+    try {
+      const taskContext = await bootstrapTaskContext();
+
+      await sleep(320);
+      setItems((prev) =>
+        prev.map((item) =>
+          item.kind === "step" && item.id === structureStepId
+            ? { ...item, status: "completed", meta: "34 sections scanned" }
+            : item
+        )
+      );
+
+      setItems((prev) => [
+        ...prev,
+        {
+          id: makeId("assistant"),
+          kind: "assistant",
+          content: `Now I'll pull passages relevant to "${query}".`,
+        },
+        { id: retrievalStepId, kind: "step", label: "Get page content", status: "running" },
+      ]);
+
+      const retrieval = await syntheticRetrieve(query, taskContext.ticker);
+      const chunks = flattenChunks(retrieval);
+      setCachedChunks(chunks);
+
+      setItems((prev) =>
+        prev.map((item) =>
+          item.kind === "step" && item.id === retrievalStepId
+            ? {
+                ...item,
+                status: "completed",
+                meta: `${chunks.length} chunks • ${retrieval.latency_ms} ms`,
+              }
+            : item
+        )
+      );
+
+      const checkpoints = await resolveCheckpointInstances(taskContext.taskId, "after_retrieval");
+      const chunkSelector = checkpoints.find((checkpoint) => checkpoint.control_type === "chunk_selector");
+      const dynamicAfterRetrieval = checkpoints.filter(
+        (checkpoint) => checkpoint.control_type !== "chunk_selector"
+      );
+
+      if (dynamicAfterRetrieval.length > 0) {
+        appendCheckpointItems(taskContext.taskId, "after_retrieval", dynamicAfterRetrieval, "");
+      }
+
+      setItems((prev) => [
+        ...prev,
+        {
+          id: makeId("assistant"),
+          kind: "assistant",
+          content:
+            "I found candidate chunks. Choose what to include in the final summary before generation.",
+        },
+        {
+          id: makeId("selector"),
+          kind: "selector",
+          query,
+          taskId: taskContext.taskId,
+          ticker: taskContext.ticker,
+          retrievalId: retrieval.retrieval_id,
+          docId: retrieval.doc_id,
+          scenario: retrieval.scenario,
+          chunks,
+          selectedChunkIds: chunks.map((chunk) => chunk.chunkId),
+          checkpointId: chunkSelector?.id,
+          submitted: false,
+          submitting: false,
+        },
+      ]);
+    } catch (caught) {
+      const message = caught instanceof Error ? caught.message : "Retrieval failed";
+      setItems((prev) =>
+        prev.map((item) =>
+          item.kind === "step" && item.id === retrievalStepId
+            ? { ...item, status: "failed", meta: "Request failed" }
+            : item
+        )
+      );
+      setItems((prev) => [...prev, { id: makeId("error"), kind: "error", content: message }]);
+      setCanAskNextQuery(true);
+    } finally {
+      setIsBusy(false);
+    }
+  }
+
+  function toggleChunk(selectorId: string, chunkId: string) {
+    setItems((prev) =>
+      prev.map((item) => {
+        if (item.kind !== "selector" || item.id !== selectorId || item.submitted) {
+          return item;
+        }
+        const selected = new Set(item.selectedChunkIds);
+        if (selected.has(chunkId)) {
+          selected.delete(chunkId);
+        } else {
+          selected.add(chunkId);
+        }
+        return { ...item, selectedChunkIds: Array.from(selected), submitError: undefined, fieldErrors: {} };
+      })
+    );
+  }
+
+  async function submitSelection(selectorId: string) {
+    const selector = items.find(
+      (item): item is Extract<ChatItem, { kind: "selector" }> =>
+        item.kind === "selector" && item.id === selectorId
+    );
+
+    if (!selector || selector.submitted || selector.selectedChunkIds.length === 0 || isBusy) {
+      return;
+    }
+
+    const selectedChunks = selector.chunks.filter((chunk) =>
+      selector.selectedChunkIds.includes(chunk.chunkId)
+    );
+    const selectedNodeIds = Array.from(new Set(selectedChunks.map((chunk) => chunk.nodeId)));
+
+    setItems((prev) =>
+      prev.map((item) =>
+        item.kind === "selector" && item.id === selectorId
+          ? { ...item, submitting: true, submitError: undefined, fieldErrors: {} }
+          : item
+      )
+    );
+
+    try {
+      if (selector.checkpointId) {
+        await submitTaskCheckpoint(selector.taskId, selector.checkpointId, {
+          selected_node_ids: selectedNodeIds,
+        });
+      }
+
+      setLastSelectedChunks(selectedChunks);
+
+      setItems((prev) =>
+        prev.map((item) =>
+          item.kind === "selector" && item.id === selectorId
+            ? { ...item, submitted: true, submitting: false }
+            : item
+        )
+      );
+
+      setItems((prev) => [
+        ...prev,
+        {
+          id: makeId("status"),
+          kind: "status",
+          content: `${selectedChunks.length} chunk${selectedChunks.length > 1 ? "s" : ""} selected.`,
+          action: { label: "View selected chunks", type: "view_selected" },
+        },
+      ]);
+
+      await runGenerationFromSelection({
+        selectorId,
+        taskId: selector.taskId,
+        query: selector.query,
+        ticker: selector.ticker,
+        retrievalId: selector.retrievalId,
+        docId: selector.docId,
+        chunks: selector.chunks,
+        selectedChunkIds: selector.selectedChunkIds,
+      });
+    } catch (caught) {
+      const validation = parseValidationDetail(caught);
+      setItems((prev) =>
+        prev.map((item) => {
+          if (item.kind !== "selector" || item.id !== selectorId) {
+            return item;
+          }
+          return {
+            ...item,
+            submitting: false,
+            submitError: validation.message,
+            fieldErrors: validation.fieldErrors,
+          };
+        })
+      );
+    }
+  }
+
+  async function handleCheckpointSubmit(itemId: string, data: Record<string, unknown>) {
+    const checkpointItem = items.find(
+      (item): item is Extract<ChatItem, { kind: "checkpoint" }> =>
+        item.kind === "checkpoint" && item.id === itemId
+    );
+    if (!checkpointItem) {
+      return;
+    }
+
+    markCheckpointSubmitting(itemId, true);
+
+    try {
+      const updated = await submitTaskCheckpoint(
+        checkpointItem.taskId,
+        checkpointItem.instance.id,
+        data
+      );
+      updateCheckpointInstance(itemId, updated);
+
+      if (checkpointItem.instance.control_type === "summary_editor") {
+        const edited = String(data.edited_text ?? "").trim();
+        if (edited) {
+          setLastEditedSummary(edited);
+          setItems((prev) => [
+            ...prev,
+            {
+              id: makeId("status"),
+              kind: "status",
+              content: "Edited summary submitted.",
+              action: { label: "View edited summary", type: "view_edited" },
+            },
+          ]);
+        }
+
+        await resolvePostGenerationControls(checkpointItem.taskId, edited);
+        return;
+      }
+
+      if (checkpointItem.instance.control_type === "questionnaire") {
+        const response: QuestionnaireDraft = {
+          qAccuracy: String(data.q_accuracy ?? ""),
+          qNoErrors: String(data.q_no_errors ?? ""),
+          qTrust: String(data.q_trust ?? ""),
+          notes: String(data.notes ?? ""),
+        };
+
+        setLastQuestionnaire(response);
+        setItems((prev) => [
+          ...prev,
+          {
+            id: makeId("status"),
+            kind: "status",
+            content: `Questionnaire submitted: accuracy ${response.qAccuracy}/7, no-errors ${response.qNoErrors}/7, trust ${response.qTrust}/7.`,
+            action: { label: "View questionnaire", type: "view_questionnaire" },
+          },
+        ]);
+        completeFlowMessage();
+        return;
+      }
+
+      if (checkpointItem.pipelinePosition === "after_generation") {
+        await resolvePostGenerationControls(checkpointItem.taskId, String(data.edited_text ?? ""));
+        return;
+      }
+
+      if (checkpointItem.pipelinePosition === "post_generation") {
+        completeFlowMessage();
+      }
+    } catch (caught) {
+      const validation = parseValidationDetail(caught);
+      setCheckpointError(itemId, validation.message, validation.fieldErrors, validation.attemptCount);
+    }
+  }
+
+  async function handleCheckpointSkip(itemId: string) {
+    const checkpointItem = items.find(
+      (item): item is Extract<ChatItem, { kind: "checkpoint" }> =>
+        item.kind === "checkpoint" && item.id === itemId
+    );
+    if (!checkpointItem) {
+      return;
+    }
+
+    markCheckpointSubmitting(itemId, true);
+
+    try {
+      const updated = await skipTaskCheckpoint(checkpointItem.taskId, checkpointItem.instance.id);
+      updateCheckpointInstance(itemId, updated);
+
+      setItems((prev) => [
+        ...prev,
+        {
+          id: makeId("status"),
+          kind: "status",
+          content: `${checkpointItem.instance.label} skipped.`,
+        },
+      ]);
+
+      if (checkpointItem.pipelinePosition === "post_generation") {
+        completeFlowMessage();
+      }
+    } catch (caught) {
+      const message = caught instanceof Error ? caught.message : "Skip failed";
+      setCheckpointError(itemId, message, {});
+    }
+  }
+
+  async function handleCheckpointRetry(itemId: string) {
+    const checkpointItem = items.find(
+      (item): item is Extract<ChatItem, { kind: "checkpoint" }> =>
+        item.kind === "checkpoint" && item.id === itemId
+    );
+    if (!checkpointItem) {
+      return;
+    }
+
+    markCheckpointSubmitting(itemId, true);
+
+    try {
+      const updated = await retryTaskCheckpoint(checkpointItem.taskId, checkpointItem.instance.id);
+      updateCheckpointInstance(itemId, updated);
+    } catch (caught) {
+      const message = caught instanceof Error ? caught.message : "Retry failed";
+      setCheckpointError(itemId, message, {});
+    }
   }
 
   return (
@@ -573,7 +950,7 @@ export default function ChatInterface({ onPromptLogged }: ChatInterfaceProps) {
                                 <input
                                   type="checkbox"
                                   checked={checked}
-                                  disabled={isBusy}
+                                  disabled={isBusy || Boolean(item.submitting)}
                                   onChange={() => toggleChunk(item.id, chunk.chunkId)}
                                 />
                                 <div>
@@ -592,14 +969,32 @@ export default function ChatInterface({ onPromptLogged }: ChatInterfaceProps) {
                           })}
                         </div>
 
+                        {item.submitError ? <div className="pi-error-inline">{item.submitError}</div> : null}
+
                         <button
                           className="pi-action-btn"
-                          disabled={isBusy || item.selectedChunkIds.length === 0}
+                          disabled={isBusy || Boolean(item.submitting) || item.selectedChunkIds.length === 0}
                           onClick={() => void submitSelection(item.id)}
                         >
-                          Submit Selection
+                          {item.submitting ? "Submitting..." : "Submit Selection"}
                         </button>
                       </div>
+                    );
+                  }
+
+                  if (item.kind === "checkpoint") {
+                    return (
+                      <DynamicControlRenderer
+                        key={item.id}
+                        instance={item.instance}
+                        initialData={item.initialData}
+                        fieldErrors={item.fieldErrors}
+                        submitError={item.submitError}
+                        submitting={item.submitting}
+                        onSubmit={(data) => handleCheckpointSubmit(item.id, data)}
+                        onSkip={() => handleCheckpointSkip(item.id)}
+                        onRetry={() => handleCheckpointRetry(item.id)}
+                      />
                     );
                   }
 
@@ -649,125 +1044,11 @@ export default function ChatInterface({ onPromptLogged }: ChatInterfaceProps) {
                     </div>
                   );
                 })}
-
-                {postGenerationStage === "decision" ? (
-                  <div className="pi-inline-control-card">
-                    <div className="pi-postgen-title">What would you like to do next?</div>
-                    <div className="pi-postgen-actions">
-                      <button type="button" className="pi-secondary-btn" onClick={handleEditSummaryChoice}>
-                        I want to edit the summary
-                      </button>
-                      <button type="button" className="pi-primary-btn" onClick={handleQuestionnaireChoice}>
-                        I&apos;m happy with the summary
-                      </button>
-                    </div>
-                  </div>
-                ) : null}
-
-                {postGenerationStage === "editing" ? (
-                  <div className="pi-inline-control-card">
-                    <div className="pi-postgen-title">Edit summary</div>
-                    <textarea
-                      className="pi-edit-textarea"
-                      value={editableSummary}
-                      onChange={(event) => setEditableSummary(event.target.value)}
-                      rows={10}
-                    />
-                    <div className="pi-postgen-actions">
-                      <button
-                        type="button"
-                        className="pi-secondary-btn"
-                        onClick={() => setPostGenerationStage("decision")}
-                      >
-                        Cancel
-                      </button>
-                      <button type="button" className="pi-primary-btn" onClick={handleSaveEditedSummary}>
-                        Save edits
-                      </button>
-                    </div>
-                  </div>
-                ) : null}
-
-                {postGenerationStage === "questionnaire" ? (
-                  <form className="pi-inline-control-card" onSubmit={handleSubmitQuestionnaire}>
-                    <div className="pi-postgen-title">Questionnaire</div>
-
-                    <label className="pi-form-label" htmlFor="q-confidence">
-                      Confidence in this summary
-                    </label>
-                    <select
-                      id="q-confidence"
-                      className="pi-form-control"
-                      value={questionnaire.confidence}
-                      onChange={(event) =>
-                        setQuestionnaire((prev) => ({ ...prev, confidence: event.target.value }))
-                      }
-                    >
-                      <option value="">Select rating</option>
-                      <option value="1">1 - Very low</option>
-                      <option value="2">2 - Low</option>
-                      <option value="3">3 - Medium</option>
-                      <option value="4">4 - High</option>
-                      <option value="5">5 - Very high</option>
-                    </select>
-
-                    <label className="pi-form-label" htmlFor="q-citation">
-                      Were citations helpful?
-                    </label>
-                    <select
-                      id="q-citation"
-                      className="pi-form-control"
-                      value={questionnaire.citationHelpfulness}
-                      onChange={(event) =>
-                        setQuestionnaire((prev) => ({
-                          ...prev,
-                          citationHelpfulness: event.target.value,
-                        }))
-                      }
-                    >
-                      <option value="">Select option</option>
-                      <option value="yes">Yes</option>
-                      <option value="partly">Partly</option>
-                      <option value="no">No</option>
-                    </select>
-
-                    <label className="pi-form-label" htmlFor="q-notes">
-                      Notes (optional)
-                    </label>
-                    <textarea
-                      id="q-notes"
-                      className="pi-form-control pi-form-textarea"
-                      value={questionnaire.notes}
-                      onChange={(event) =>
-                        setQuestionnaire((prev) => ({ ...prev, notes: event.target.value }))
-                      }
-                      rows={4}
-                      placeholder="Anything unclear or missing?"
-                    />
-
-                    <div className="pi-postgen-actions">
-                      <button
-                        type="button"
-                        className="pi-secondary-btn"
-                        onClick={() => setPostGenerationStage("decision")}
-                      >
-                        Back
-                      </button>
-                      <button
-                        type="submit"
-                        className="pi-primary-btn"
-                        disabled={!questionnaire.confidence || !questionnaire.citationHelpfulness}
-                      >
-                        Submit questionnaire
-                      </button>
-                    </div>
-                  </form>
-                ) : null}
               </div>
             )}
           </div>
 
-          {postGenerationStage === "input" ? (
+          {canAskNextQuery ? (
             <form className="pi-composer-wrap" onSubmit={handleSubmit}>
               <div className="pi-composer">
                 <input
@@ -788,7 +1069,11 @@ export default function ChatInterface({ onPromptLogged }: ChatInterfaceProps) {
               </div>
               <div className="pi-disclaimer">PageIndex can make mistakes, please check the response.</div>
             </form>
-          ) : null}
+          ) : (
+            <div className="pi-composer-wrap">
+              <div className="pi-run-meta">Complete the in-stream checkpoints above to continue.</div>
+            </div>
+          )}
         </div>
 
         {panelOpen ? (
@@ -824,7 +1109,9 @@ export default function ChatInterface({ onPromptLogged }: ChatInterfaceProps) {
               {panelContent.type === "selected" ? (
                 <div className="pi-right-card">
                   <div className="pi-right-title">Selected Chunks</div>
-                  <div className="pi-right-subtitle">{panelContent.chunks.length} chunks selected for generation.</div>
+                  <div className="pi-right-subtitle">
+                    {panelContent.chunks.length} chunks selected for generation.
+                  </div>
                   <div className="pi-selector-list">
                     {panelContent.chunks.map((chunk) => (
                       <div key={chunk.chunkId} className="pi-selector-item">
@@ -853,10 +1140,13 @@ export default function ChatInterface({ onPromptLogged }: ChatInterfaceProps) {
                   <div className="pi-right-title">Questionnaire Response</div>
                   <div className="pi-citation-preview">
                     <div className="pi-citation-preview-text">
-                      Confidence: {panelContent.response.confidence}/5
+                      Accuracy rating: {panelContent.response.qAccuracy || "n/a"}
                     </div>
                     <div className="pi-citation-preview-text">
-                      Citation helpfulness: {panelContent.response.citationHelpfulness}
+                      No-errors rating: {panelContent.response.qNoErrors || "n/a"}
+                    </div>
+                    <div className="pi-citation-preview-text">
+                      Trust rating: {panelContent.response.qTrust || "n/a"}
                     </div>
                     <div className="pi-citation-preview-text">
                       Notes: {panelContent.response.notes.trim() || "none"}

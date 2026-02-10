@@ -739,6 +739,64 @@ input {
   resize: vertical;
 }
 
+.pi-option-group {
+  margin-top: 8px;
+  display: grid;
+  gap: 8px;
+}
+
+.pi-option-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text-secondary);
+  font-size: 13px;
+}
+
+.pi-chip-grid {
+  margin-top: 8px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.pi-chip-toggle {
+  border: 1px solid var(--border-soft);
+  background: #101522;
+  color: var(--text-secondary);
+  border-radius: 999px;
+  padding: 5px 10px;
+  cursor: pointer;
+  font-size: 12px;
+}
+
+.pi-chip-toggle.active {
+  border-color: #2f6db5;
+  background: rgba(38, 87, 148, 0.45);
+  color: #b8d8ff;
+}
+
+.pi-checkpoint-card {
+  margin-top: 14px;
+}
+
+.pi-checkpoint-summary {
+  margin-top: 10px;
+  color: var(--text-secondary);
+  line-height: 1.5;
+  font-size: 14px;
+  border: 1px solid var(--border-soft);
+  background: #0f141f;
+  border-radius: 8px;
+  padding: 10px;
+}
+
+.pi-field-error {
+  margin-top: 6px;
+  color: #ffb9c1;
+  font-size: 12px;
+}
+
 .pi-citation-source-chip {
   margin-top: 10px;
   width: fit-content;
