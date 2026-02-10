@@ -9,10 +9,20 @@ from app.models.enums import CheckpointPipelinePosition
 from app.schemas.checkpoint import (
     CheckpointDefinitionResponse,
     CheckpointInstanceResponse,
+    CheckpointSubmitRequest,
+    CheckpointValidationIssue,
     FieldDefinition,
     ResolvedCheckpointsResponse,
 )
-from app.services.checkpoint_resolver import resolve_checkpoints_for_task
+from app.services.checkpoint_resolver import (
+    ValidationIssue,
+    get_checkpoint_instance,
+    resolve_checkpoints_for_task,
+    retry_checkpoint_instance,
+    skip_checkpoint_instance,
+    submit_checkpoint_instance,
+    validate_submission,
+)
 
 router = APIRouter(tags=["checkpoints"])
 
@@ -67,6 +77,17 @@ def _to_instance_response(
     )
 
 
+def _to_validation_issue(issue: ValidationIssue) -> CheckpointValidationIssue:
+    return CheckpointValidationIssue(key=issue.key, message=issue.message)
+
+
+def _raise_value_error(exc: ValueError) -> None:
+    message = str(exc)
+    if "not found" in message.lower():
+        raise HTTPException(status_code=404, detail=message) from exc
+    raise HTTPException(status_code=400, detail=message) from exc
+
+
 @router.get(
     "/api/checkpoints/definitions",
     response_model=list[CheckpointDefinitionResponse],
@@ -104,7 +125,7 @@ def resolve_task_checkpoints(
             pipeline_position=pipeline_position,
         )
     except ValueError as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
+        _raise_value_error(exc)
 
     db.commit()
     return ResolvedCheckpointsResponse(
@@ -115,3 +136,114 @@ def resolve_task_checkpoints(
             for definition, instance in resolved
         ],
     )
+
+
+@router.get(
+    "/api/tasks/{task_id}/checkpoints/{instance_id}",
+    response_model=CheckpointInstanceResponse,
+)
+def get_task_checkpoint_instance(
+    task_id: str,
+    instance_id: str,
+    db: Session = Depends(get_db),
+):
+    try:
+        definition, instance = get_checkpoint_instance(
+            db,
+            task_id=task_id,
+            instance_id=instance_id,
+        )
+    except ValueError as exc:
+        _raise_value_error(exc)
+    return _to_instance_response(definition, instance)
+
+
+@router.post(
+    "/api/tasks/{task_id}/checkpoints/{instance_id}/submit",
+    response_model=CheckpointInstanceResponse,
+)
+def submit_task_checkpoint(
+    task_id: str,
+    instance_id: str,
+    payload: CheckpointSubmitRequest,
+    db: Session = Depends(get_db),
+):
+    try:
+        definition, instance = get_checkpoint_instance(
+            db,
+            task_id=task_id,
+            instance_id=instance_id,
+        )
+    except ValueError as exc:
+        _raise_value_error(exc)
+
+    issues = validate_submission(definition, payload.data)
+    if issues:
+        definition, instance = submit_checkpoint_instance(
+            db,
+            task_id=task_id,
+            instance_id=instance_id,
+            data=payload.data,
+        )
+        db.commit()
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "message": "Checkpoint submission validation failed",
+                "issues": [_to_validation_issue(issue).model_dump() for issue in issues],
+                "attempt_count": instance.attempt_count,
+                "max_retries": definition.max_retries,
+                "retry_available": instance.attempt_count < definition.max_retries,
+            },
+        )
+
+    definition, instance = submit_checkpoint_instance(
+        db,
+        task_id=task_id,
+        instance_id=instance_id,
+        data=payload.data,
+    )
+    db.commit()
+    return _to_instance_response(definition, instance)
+
+
+@router.post(
+    "/api/tasks/{task_id}/checkpoints/{instance_id}/skip",
+    response_model=CheckpointInstanceResponse,
+)
+def skip_task_checkpoint(
+    task_id: str,
+    instance_id: str,
+    db: Session = Depends(get_db),
+):
+    try:
+        definition, instance = skip_checkpoint_instance(
+            db,
+            task_id=task_id,
+            instance_id=instance_id,
+        )
+    except ValueError as exc:
+        _raise_value_error(exc)
+    db.commit()
+    return _to_instance_response(definition, instance)
+
+
+@router.post(
+    "/api/tasks/{task_id}/checkpoints/{instance_id}/retry",
+    response_model=CheckpointInstanceResponse,
+)
+def retry_task_checkpoint(
+    task_id: str,
+    instance_id: str,
+    db: Session = Depends(get_db),
+):
+    try:
+        definition, instance = retry_checkpoint_instance(
+            db,
+            task_id=task_id,
+            instance_id=instance_id,
+        )
+    except ValueError as exc:
+        _raise_value_error(exc)
+    db.commit()
+    return _to_instance_response(definition, instance)

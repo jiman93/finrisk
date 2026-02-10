@@ -1,4 +1,5 @@
 from datetime import datetime
+from typing import Any
 
 from pydantic import BaseModel, Field
 
@@ -63,3 +64,12 @@ class ResolvedCheckpointsResponse(BaseModel):
     task_id: str
     pipeline_position: CheckpointPipelinePosition
     checkpoints: list[CheckpointInstanceResponse] = Field(default_factory=list)
+
+
+class CheckpointSubmitRequest(BaseModel):
+    data: dict[str, Any] = Field(default_factory=dict)
+
+
+class CheckpointValidationIssue(BaseModel):
+    key: str
+    message: str
