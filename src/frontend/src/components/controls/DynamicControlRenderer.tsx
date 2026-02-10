@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 
 import type { CheckpointFieldDefinition, CheckpointInstanceResponse } from "../../types";
 import FieldRenderer from "./FieldRenderer";
+import CheckpointTimeoutBar from "./CheckpointTimeoutBar";
 
 interface DynamicControlRendererProps {
   instance: CheckpointInstanceResponse;
@@ -12,6 +13,7 @@ interface DynamicControlRendererProps {
   onSubmit: (data: Record<string, unknown>) => Promise<void>;
   onSkip: () => Promise<void>;
   onRetry: () => Promise<void>;
+  onTimeout: () => Promise<void>;
 }
 
 function isEmpty(value: unknown): boolean {
@@ -90,20 +92,61 @@ export default function DynamicControlRenderer({
   onSubmit,
   onSkip,
   onRetry,
+  onTimeout,
 }: DynamicControlRendererProps) {
   const initialDataHash = useMemo(() => JSON.stringify(initialData ?? {}), [initialData]);
   const [formData, setFormData] = useState<Record<string, unknown>>(() =>
     buildInitialData(instance, initialData)
   );
   const [clientErrors, setClientErrors] = useState<Record<string, string>>({});
+  const [remainingSeconds, setRemainingSeconds] = useState<number | null>(
+    instance.timeout_seconds ?? null
+  );
 
   useEffect(() => {
     setFormData(buildInitialData(instance, initialData));
     setClientErrors({});
+    setRemainingSeconds(instance.timeout_seconds ?? null);
   }, [instance.id, initialDataHash]);
+
+  useEffect(() => {
+    const timeoutSeconds = instance.timeout_seconds;
+    if (!timeoutSeconds || timeoutSeconds <= 0) {
+      return;
+    }
+    if (
+      submitting ||
+      instance.state === "submitted" ||
+      instance.state === "collapsed" ||
+      instance.state === "skipped" ||
+      instance.state === "timed_out"
+    ) {
+      return;
+    }
+
+    const intervalId = window.setInterval(() => {
+      setRemainingSeconds((current) => {
+        if (current === null) {
+          return timeoutSeconds;
+        }
+        const next = current - 1;
+        if (next > 0) {
+          return next;
+        }
+        window.clearInterval(intervalId);
+        void onTimeout();
+        return 0;
+      });
+    }, 1000);
+
+    return () => {
+      window.clearInterval(intervalId);
+    };
+  }, [instance.id, instance.state, instance.timeout_seconds, submitting]);
 
   const mergedErrors = { ...clientErrors, ...(fieldErrors ?? {}) };
   const isFinal = instance.state === "submitted" || instance.state === "collapsed" || instance.state === "skipped";
+  const canRetry = instance.attempt_count < instance.max_retries;
 
   async function handleSubmit() {
     const nextErrors: Record<string, string> = {};
@@ -130,6 +173,13 @@ export default function DynamicControlRenderer({
           {instance.required ? " • required" : " • optional"}
         </span>
       </div>
+
+      {instance.timeout_seconds ? (
+        <CheckpointTimeoutBar
+          totalSeconds={instance.timeout_seconds}
+          remainingSeconds={remainingSeconds ?? instance.timeout_seconds}
+        />
+      ) : null}
 
       {isFinal ? (
         <div className="pi-checkpoint-summary">
@@ -166,6 +216,15 @@ export default function DynamicControlRenderer({
             <div className="pi-error-inline">{submitError || instance.last_error}</div>
           ) : null}
 
+          {instance.max_retries > 0 ? (
+            <div className="pi-run-meta">
+              Attempts: {instance.attempt_count}/{instance.max_retries}
+              {!canRetry && (instance.state === "failed" || instance.state === "timed_out")
+                ? " • retry limit reached"
+                : ""}
+            </div>
+          ) : null}
+
           <div className="pi-postgen-actions">
             <button
               type="button"
@@ -185,7 +244,7 @@ export default function DynamicControlRenderer({
                 Skip
               </button>
             ) : null}
-            {instance.state === "failed" || instance.state === "timed_out" ? (
+            {(instance.state === "failed" || instance.state === "timed_out") && canRetry ? (
               <button
                 type="button"
                 className="pi-secondary-btn"

@@ -198,3 +198,13 @@ export function retryTaskCheckpoint(
     body: JSON.stringify({}),
   });
 }
+
+export function timeoutTaskCheckpoint(
+  taskId: string,
+  instanceId: string
+): Promise<CheckpointInstanceResponse> {
+  return request<CheckpointInstanceResponse>(`/api/tasks/${taskId}/checkpoints/${instanceId}/timeout`, {
+    method: "POST",
+    body: JSON.stringify({}),
+  });
+}
